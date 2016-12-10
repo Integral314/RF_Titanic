@@ -1,0 +1,161 @@
+---
+title: "Titanic Data Sets and RandomForests"
+author: "Trey Beeman"
+date: "December 9, 2016"
+output: html_document
+---
+# __1 Introduction__
+
+### __1.1 Abstract__
+
+This document is being created to learn `randomForests` working with data from Kaggle competitions.  Thanks to Kaggle.com and Datacamp.com for the information and guidance in preparing this document.
+
+### __1.2 Libraries__
+This is an exhaustive list of all libraries used for this project.
+```{r libraries, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(randomForest)
+library(rpart)
+library(caret)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+```
+
+# __2 Data__
+We read the data sets into R.  The data can be found at the links in the code block. 
+```{r load datasets}
+# create url strings
+train_url <- "http://s3.amazonaws.com/assets.datacamp.com/course/Kaggle/train.csv"
+test_url <- "http://s3.amazonaws.com/assets.datacamp.com/course/Kaggle/test.csv"
+
+# read the data in to R.
+train <- read.csv(train_url, stringsAsFactors = FALSE)
+test <- read.csv(test_url, stringsAsFactors = FALSE)
+
+# combine the data into a single dataframe for feature engineering
+df <- bind_rows(train,test)
+
+```
+
+### __2.1 Exploratory Data Analysis__ 
+
+We take a look at the data to gain insight into what can be pulled out of it.
+
+A `str()` of the data with an overview of the data, class and variabe names. 
+```{r, echo=FALSE}
+str(df)
+```
+
+We will highlight a few useful or interesting facts from the data.
+
+This is a proportion table of the survivors by `Sex`.
+```{r, echo=FALSE}
+prop.table(table(df$Sex, df$Survived),1)
+```
+
+This is a proportion table of survivors by Passenger Class `Pclass`.
+```{r, echo=FALSE}
+prop.table(table(df$Pclass, df$Survived),1)
+```
+
+##### __2.1.1 The Passengers__
+The mean age of all passengers is: 
+
+```{r, echo = FALSE}
+mean(df$Age,na.rm = TRUE)
+```
+
+The mininum age of all passengers is:
+```{r, echo = FALSE}
+min(df$Age,na.rm = TRUE)
+```
+
+The maxinum age of all passengers is:
+```{r, echo = FALSE}
+max(df$Age,na.rm = TRUE)
+```
+
+##### __2.2.2 The Survivors__
+The mean age of survivors is:
+```{r, echo = FALSE}
+mean(df$Age[df$Survived == 1],na.rm = TRUE)
+```
+
+The mininum age of survivors:
+```{r, echo = FALSE}
+min(df$Age[df$Survived == 1],na.rm = TRUE)
+```
+
+The maximum age of survivors:
+```{r, echo = FALSE}
+max(df$Age[df$Survived == 1],na.rm = TRUE)
+```
+
+### __2.2 Exploratory Graphs__
+
+```{r exploratory graphs, echo = FALSE}
+hist(df$Age, breaks = seq(0, 80, 5), main = "Histogram of Ages of All Passengers", xlab = "Passenger Ages in groups of 5 years")
+hist(df$Age[train$Survived == 1], breaks = seq(0, 80, 5), main = "Histogram of Ages of Surviving Passengers", xlab = "Survivors Ages in groups of 5 years")
+```
+
+# __3 Feature Engineering__
+
+### __3.1 Names__
+We will create or __feature engineer__ a new variable based first on names.  We create a `Title` variable.
+```{r titles}
+# pull the title out of the passenger names
+df$Title <- gsub('(.*, )|(\\..*)', '', df$Name)
+
+table(df$Sex, df$Title)
+```
+
+First, we will quickly clean up the titles with are synonyms and congnates.
+```{r titles cognates}
+df$Title[df$Title == "Miss"] <- "Ms"
+df$Title[df$Title == "Mlle"] <- 'Ms'
+df$Title[df$Title == "Mme"] <- 'Mrs'
+df$Title[df$Title == "Master"] <- 'Mr'
+```
+
+With the remaining, we will divide them into classes of __nobility, military, Dr__ and __Rev__ in order to preserve the information in these titles.
+
+```{r titles honorific}
+nobility <- c("Don", "Dona", "Jonkheer", "Lady", "Sir", "the Countess")
+military <- c("Capt", "Col", "Major")
+
+df$Title[df$Title %in% nobility] <- "Nobility"
+df$Title[df$Title %in% military] <- "Military"
+```
+
+It is interesting to note that all the individuals with the title __Rev__ did not survive.
+```{r titles graph, echo=FALSE}
+ggplot(data = df[(df$Title %in% c("Dr", "Military", "Nobility", "Rev")) & (!is.na(df$Survived)),], aes(x = Title, fill = factor(Survived))) + geom_bar(stat='count', position='dodge') + labs(x = 'Titles')
+```
+
+### __3.2 Families__ 
+
+We want to examine the hypothesis that families are likely to move together as a group, therefore, their survivorship may differ from an individual travelling alone.  We will create `family_size` variable to indicate a family travelling together.
+
+```{r families 1}
+# create a new variable, family_size
+df$family_size <- df$SibSp + df$Parch + 1
+
+# Create a family variable identifying a group travelling together
+df$Family <- paste(df$Surname, df$family_size, sep='_')
+```
+
+We can see that individuals and familes greater than 4 had a lower survivorship than other groups. 
+```{r families graph 1}
+ggplot(data = subset(df, !is.na(df$Survived)), aes(x = family_size, fill = factor(Survived))) + geom_bar(stat='count', position='dodge') + scale_x_continuous(breaks=c(1:11)) + labs(x = 'Family Size')
+```
+
+# __4 Modelling__
+
+We will begin by looking at a decision tree for important clusters of data
+```{r decision tree}
+D.tree <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data = train, method = "class")
+fancyRpartPlot(D.tree)
+```
+
