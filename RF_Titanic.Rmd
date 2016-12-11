@@ -151,7 +151,30 @@ We can see that individuals and familes greater than 4 had a lower survivorship 
 ggplot(data = subset(df, !is.na(df$Survived)), aes(x = family_size, fill = factor(Survived))) + geom_bar(stat='count', position='dodge') + scale_x_continuous(breaks=c(1:11)) + labs(x = 'Family Size')
 ```
 
-# __4 Modelling__
+We are going to created a __discretized__ variable on family size in order to examine this data a little more closely.
+
+```{r discetize family var}
+# create the vatiables
+df$Disfamily_size[df$family_size == 1] <- 'singleton'
+df$Disfamily_size[df$family_size < 5 & df$family_size > 1] <- 'small'
+df$Disfamily_size[df$family_size > 4] <- 'large'
+
+# mosaicplot of the 
+mosaicplot(table(df$Disfamily_size, df$Survived), main='Family Size by Survival', shade=TRUE)
+```
+
+The mosaic plot confirms our hyopthesis that there is a penalty for individuals and large families.
+
+### __3.3 Cabin__
+
+
+
+# __4 Missing Values__
+
+In order to continue this analysis, we must address the misssing values.
+
+
+# __5 Modelling__
 
 We will begin by looking at a decision tree for important clusters of data
 ```{r decision tree}
@@ -159,3 +182,19 @@ D.tree <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked,
 fancyRpartPlot(D.tree)
 ```
 
+
+set.seed(111)
+
+# Apply the Random Forest Algorithm
+my_forest <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title, data = train, importance = TRUE, ntree = 1000)
+
+# Make your prediction using the test set
+my_prediction <- predict(my_forest, test)
+
+# Create a data frame with two columns: PassengerId & Survived. Survived contains your predictions
+my_solution <- data.frame(PassengerId = test[,1], Survived = my_prediction)
+
+# Write your solution away to a csv file with the name my_solution.csv
+write.csv(my_solution, file = "my_solution.csv", row.names = FALSE)
+
+varImpPlot(my_forest)
