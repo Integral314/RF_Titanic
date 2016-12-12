@@ -8,7 +8,7 @@ output: html_document
 
 ### __1.1 Abstract__
 
-This document is being created to learn `randomForests` working with data from Kaggle competitions.  Thanks to Kaggle.com and Datacamp.com for the information and guidance in preparing this document.
+This document is being created to learn `randomForests` working with data from Kaggle competitions.  Thanks to Kaggle.com and Datacamp.com for the information and guidance in preparing this document.  I relied heavily on this source (https://www.kaggle.io/svf/198371/166ea2e9c1074ca9cd2447c7ee27cf10/__results__.html#prediction) in order to work through the feature engineering techniques.
 
 ### __1.2 Libraries__
 This is an exhaustive list of all libraries used for this project.
@@ -40,7 +40,6 @@ df <- bind_rows(train,test)
 ```
 
 ### __2.1 Exploratory Data Analysis__ 
-
 We take a look at the data to gain insight into what can be pulled out of it.
 
 A `str()` of the data with an overview of the data, class and variabe names. 
@@ -94,7 +93,7 @@ max(df$Age[df$Survived == 1],na.rm = TRUE)
 ```
 
 ### __2.2 Exploratory Graphs__
-
+These graphs are intended to explore the  
 ```{r exploratory graphs, echo = FALSE}
 hist(df$Age, breaks = seq(0, 80, 5), main = "Histogram of Ages of All Passengers", xlab = "Passenger Ages in groups of 5 years")
 hist(df$Age[train$Survived == 1], breaks = seq(0, 80, 5), main = "Histogram of Ages of Surviving Passengers", xlab = "Survivors Ages in groups of 5 years")
@@ -142,6 +141,9 @@ We want to examine the hypothesis that families are likely to move together as a
 # create a new variable, family_size
 df$family_size <- df$SibSp + df$Parch + 1
 
+# create Surname variable 
+df$Surname <- sapply(df$Name, function(x) strsplit(x, split = '[,.]')[[1]][1])
+
 # Create a family variable identifying a group travelling together
 df$Family <- paste(df$Surname, df$family_size, sep='_')
 ```
@@ -166,13 +168,61 @@ mosaicplot(table(df$Disfamily_size, df$Survived), main='Family Size by Survival'
 The mosaic plot confirms our hyopthesis that there is a penalty for individuals and large families.
 
 ### __3.3 Cabin__
+We will create a variable for the Deck based on the information about the cabin assignments.
 
+```{r create deck variable}
+df$Deck <- factor(sapply(df$Cabin, function(x)  strsplit(x, "")[[1]][1]))
+```
 
 
 # __4 Missing Values__
 
-In order to continue this analysis, we must address the misssing values.
+### __4.1 Simple Value Imputation__
+In order to continue we need to deal with missing values.  First, we look at where they are missing values.
 
+```{r where are missing values}
+# search for blanks
+sapply(df, function(x) sum(grepl("^$", x)))
+
+# search for NAs
+sapply(df, function(x) sum(is.na(x)))
+```
+
+We start small. __Embarked__ is missing two values.
+```{r embarked missing values}
+# which values are missing
+which(grepl("^$", df$Embarked) == TRUE)
+
+# examine the data 
+df[62,]
+df[830,]
+```
+
+Looking at the data there is an interesting coincidence, these ladies shared a cabin.  In this case, given the small number of changes, an investigation into the names revealed that there is documentation of these ladies. Ms. Icard was Mrs. Stone's maid and they boarded Titanic at Southhampton per this website (https://www.encyclopedia-titanica.org/titanic-survivor/martha-evelyn-stone.html)
+
+In this instance, we will assign the values based on this information.
+```{r embarked assign values}
+df$Embarked[62] <- df$Embarked[830] <- "S"
+```
+
+__Fare__ is missing one value.
+```{r fare missing value}
+# examine the data
+df[which(is.na(df$Fare) == TRUE),]
+
+ggplot(df[df$Pclass == '3' & df$Embarked == 'S', ], aes(x = Fare)) +
+   geom_density(fill = '#99d6ff', alpha=0.4) + 
+   geom_vline(aes(xintercept=median(Fare, na.rm=TRUE)),
+              colour='red', linetype='dashed', lwd=1)
+```
+
+Mr. Storey departed from Southhamptom and travelled 3rd class, so we will use those variables to base an imputation.  It appears reasonable to assume the median for his __Pclass__ and __Embarked__ values.
+
+```{r fare imputed value}
+df$Fare[1044] <- median(df[df$Pclass == "3" & df$Embarked == "S",]$Fare, na.rm = TRUE)
+```
+
+### __4.3 
 
 # __5 Modelling__
 
