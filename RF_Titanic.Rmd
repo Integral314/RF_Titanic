@@ -20,6 +20,7 @@ library(rpart)
 library(caret)
 library(rattle)
 library(rpart.plot)
+library(mice)
 library(RColorBrewer)
 ```
 
@@ -206,7 +207,7 @@ df$Embarked[62] <- df$Embarked[830] <- "S"
 ```
 
 __Fare__ is missing one value.
-```{r fare missing value}
+```{r fare missing value, warning=FALSE}
 # examine the data
 df[which(is.na(df$Fare) == TRUE),]
 
@@ -222,7 +223,51 @@ Mr. Storey departed from Southhamptom and travelled 3rd class, so we will use th
 df$Fare[1044] <- median(df[df$Pclass == "3" & df$Embarked == "S",]$Fare, na.rm = TRUE)
 ```
 
-### __4.3 
+### __4.2 Age__
+We tackle __Age__ next which has 263 missing values.  We will use predicitve imputation via the `mice` package.
+
+```{r age}
+# coerce variables to factors
+factor_vars <- c("PassengerId", "Pclass", "Sex", "Embarked", "Title", "Surname", "Family", "Disfamily_size")
+
+df[factor_vars] <- lapply(df[factor_vars], function(x) as.factor(x))
+
+set.seed(129)
+
+mice_mod <- mice(df[, !names(df) %in% c('PassengerId','Name','Ticket','Cabin','Family','Surname','Survived')], method="rf")
+
+mice_output <- complete(mice_mod)
+```
+
+Now, we compare the distruibution of the imputed values with the observed values.
+
+```{r mice chack graph}
+# hist of age distributions
+par(mfrow=c(1,2))
+hist(df$Age, freq=F, main='Age: Original Data', 
+  col='darkgreen', ylim=c(0,0.04))
+hist(mice_output$Age, freq=F, main='Age: MICE Output', 
+  col='lightgreen', ylim=c(0,0.04))
+```
+
+The distributions are very close, so we proceed with adding the values to `df`.
+
+```{r add mice values}
+df$Age <- mice_output$Age
+
+sum(is.na(df$Age))
+```
+
+This concludes the imputing that we care about at this point. _(revisit later??)_
+
+### __4.3 Feature Engineering Part Two__
+
+Now, we create age dependent variables __Child__ and __Mother__.
+```{r Mother and child graph}
+# First we'll look at the relationship between age & survival
+ggplot(df[1:891,], aes(Age, fill = factor(Survived))) + 
+  geom_histogram() + facet_grid(.~Sex)
+```
 
 # __5 Modelling__
 
