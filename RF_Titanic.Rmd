@@ -2,7 +2,12 @@
 title: "Titanic Data Sets and RandomForests"
 author: "Trey Beeman"
 date: "December 9, 2016"
-output: html_document
+output: 
+  html_document:
+    number sections: true
+    toc: true
+    theme: readable
+    highlight: tango
 ---
 # __1 Introduction__
 
@@ -96,8 +101,8 @@ max(df$Age[df$Survived == 1],na.rm = TRUE)
 ### __2.2 Exploratory Graphs__
 These graphs are intended to explore the  
 ```{r exploratory graphs, echo = FALSE}
-hist(df$Age, breaks = seq(0, 80, 5), main = "Histogram of Ages of All Passengers", xlab = "Passenger Ages in groups of 5 years")
-hist(df$Age[train$Survived == 1], breaks = seq(0, 80, 5), main = "Histogram of Ages of Surviving Passengers", xlab = "Survivors Ages in groups of 5 years")
+hist(df$Age, breaks = seq(0, 80, 5), main = "Histogram of Ages of All Passengers", col = "lightblue", xlab = "Passenger Ages in groups of 5 years")
+hist(df$Age[train$Survived == 1], breaks = seq(0, 80, 5), main = "Histogram of Ages of Surviving Passengers", col = "lightblue", xlab = "Survivors Ages in groups of 5 years")
 ```
 
 # __3 Feature Engineering__
@@ -113,10 +118,9 @@ table(df$Sex, df$Title)
 
 First, we will quickly clean up the titles with are synonyms and congnates.
 ```{r titles cognates}
-df$Title[df$Title == "Miss"] <- "Ms"
-df$Title[df$Title == "Mlle"] <- 'Ms'
+df$Title[df$Title == "Ms"] <- "Miss"
+df$Title[df$Title == "Mlle"] <- 'Miss'
 df$Title[df$Title == "Mme"] <- 'Mrs'
-df$Title[df$Title == "Master"] <- 'Mr'
 ```
 
 With the remaining, we will divide them into classes of __nobility, military, Dr__ and __Rev__ in order to preserve the information in these titles.
@@ -244,15 +248,16 @@ Now, we compare the distruibution of the imputed values with the observed values
 ```{r mice chack graph}
 # hist of age distributions
 par(mfrow=c(1,2))
-hist(df$Age, freq=F, main='Age: Original Data', 
-  col='darkgreen', ylim=c(0,0.04))
-hist(mice_output$Age, freq=F, main='Age: MICE Output', 
-  col='lightgreen', ylim=c(0,0.04))
+hist(df$Age, freq=FALSE, main='Age: Original Data', 
+  col='darkblue', ylim=c(0,0.04))
+hist(mice_output$Age, freq=FALSE, main='Age: MICE Output', 
+  col='lightblue', ylim=c(0,0.04))
 ```
 
 The distributions are very close, so we proceed with adding the values to `df`.
 
 ```{r add mice values}
+# save the mice output to df
 df$Age <- mice_output$Age
 
 sum(is.na(df$Age))
@@ -263,33 +268,109 @@ This concludes the imputing that we care about at this point. _(revisit later??)
 ### __4.3 Feature Engineering Part Two__
 
 Now, we create age dependent variables __Child__ and __Mother__.
-```{r Mother and child graph}
+```{r Mother and child graph, warning=FALSE, message=FALSE}
 # First we'll look at the relationship between age & survival
 ggplot(df[1:891,], aes(Age, fill = factor(Survived))) + 
   geom_histogram() + facet_grid(.~Sex)
 ```
 
+```{r }
+# create child variable
+df$Child[df$Age < 18] <- 'Child'
+df$Child[df$Age >= 18] <- 'Adult'
+
+# table counts
+table(df$Child, df$Survived)
+```
+
+So there is even odds of survival for children.  Now we will create a __Mother__ variable.
+
+```{r Mother variable}
+# create mother variable
+df$Mother <- "Not Mother"
+df$Mother[df$Sex == "female" & df$Parch > 0 & df$Age > 18 & df$Title != "Miss"] <- "Mother"
+
+# table of counts
+table(df$Mother, df$Survived)
+
+# coerce to factor variables
+df$Child <- factor(df$Child)
+df$Mother <- factor(df$Mother)
+```
+
+We will check for missing data using the `md.pattern` function.
+
+```{r md.pattern chk, warning=FALSE}
+md.pattern(df)
+```
+
+We will proceed with modelling with this data.
+
 # __5 Modelling__
 
-We will begin by looking at a decision tree for important clusters of data
+### __5.1 Split data  into training and test sets__
+```{r prepare data for modelling}
+train <- df[1:891,]
+test <- df[892:1309,]
+```
+
+### __5.2 A Decision Tree__
+We will begin by looking at a decision tree for important clusters of data.
+
 ```{r decision tree}
-D.tree <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data = train, method = "class")
+# decision tree
+D.tree <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + Disfamily_size + Child + Mother, data = train, method = "class")
+
+# Fancy plot the decision tree
+par(mfrow=c(1,1))
 fancyRpartPlot(D.tree)
 ```
 
+The decision tree indicates that __Title__ and __Pclass__ are the most important variables.  Next, we run a random forest.
 
+### __5.3 Random Forest Model__
+
+```{r random forest}
+# set the seed 
 set.seed(111)
 
 # Apply the Random Forest Algorithm
-my_forest <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title, data = train, importance = TRUE, ntree = 1000)
+rf_model <- randomForest(factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + Disfamily_size + Child + Mother, data = train)
 
-# Make your prediction using the test set
-my_prediction <- predict(my_forest, test)
+# show model error
+plot(rf_model)
+legend("topright", colnames(rf_model$err.rate), col = 1:3, fill = 1:3)
+```
 
-# Create a data frame with two columns: PassengerId & Survived. Survived contains your predictions
-my_solution <- data.frame(PassengerId = test[,1], Survived = my_prediction)
+Our model appears to get a little worse at predicting survival.  That may be something to look at later for improvement.  We are improve at predicting death.
 
-# Write your solution away to a csv file with the name my_solution.csv
-write.csv(my_solution, file = "my_solution.csv", row.names = FALSE)
+The most important variables are as follows.
 
-varImpPlot(my_forest)
+```{r random forest variable importance}
+# variable importance
+importance    <- importance(rf_model)
+varImportance <- data.frame(Variables = row.names(importance), Importance = round(importance[ ,'MeanDecreaseGini'],2))
+
+# create a rank variable based on importance
+rankImportance <- varImportance %>% mutate(Rank = paste0('#',dense_rank(desc(Importance))))
+
+# Use ggplot2 to visualize the relative importance of variables
+ggplot(rankImportance, aes(x = reorder(Variables, Importance), y = Importance, fill = Importance)) + geom_bar(stat='identity') + geom_text(aes(x = Variables, y = 0.5, label = Rank),hjust=0, vjust=0.55, size = 4, colour = 'red') + labs(x = 'Variables') + coord_flip()
+```
+
+Versus Megan Risdal'e's model, __Fare__ and __Sex__ have traded priority.  __Title__ is the most important which is means the feature engineering was successful. 
+
+### __5.4 Prediction__
+
+We create a prediction set to submit to Kaggle.
+```{r predicton}
+# create prediction from the test set
+prediction <- predict(rf_model, test)
+
+# create a data frame with PassengerId and Survived
+solution <- data.frame(PassengerId = test[,1], Survived = prediction)
+
+# Write solution to a csv file
+write.csv(solution, file = "solution_rf1.csv", row.names = FALSE)
+
+```
